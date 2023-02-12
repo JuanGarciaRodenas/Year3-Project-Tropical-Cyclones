@@ -1,9 +1,13 @@
 import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from enum import Enum
 
-P0 = 1000
-R_air = 287
-cp_air = 1005
-cp_water = 4184
+class constants(float, Enum):
+    P0 = 1000
+    R_air = 287
+    cp_air = 1005
+    cp_water = 4184
 
 def saturation_mix_ratio(p, T):
     return 3.802/p * np.exp((17.67 * (T - 273.15)) /  (T - 29.65))
@@ -13,7 +17,7 @@ def mix_ratio(p, T, RH):
 
 def potential_temp(p, T, q):
     # Potential temperature of moist air neglecting cp variation (Bolton 1980)
-    return (T - 273.15) * (P0/p) ** ((R_air / cp_air) * (1 - 0.28) * q)
+    return (T - 273.15) * (constants.P0/p) ** ((constants.R_air / constants.cp_air) * (1 - 0.28) * q)
 
 def equiv_potential_temp(p, T, q):
     # Empirical formula for equivalent potential temperature (Bolton 1980)
@@ -22,24 +26,39 @@ def equiv_potential_temp(p, T, q):
 
     return potential_temp(p, T, q) * np.exp((1000 * q) * (1 + .81*q) * (3.376/T_L - 0.00254))
 
-
 def eyewall_delta_T(theta_ES, p, T, T_env, q_star):
-    return (theta_ES * (p/1000) ** (R_air/cp_air)) / np.exp((1000 * q_star) * (1 + .81*q_star) * (3.376/T - 0.00254)) - T_env
+    return (theta_ES * (p/1000) ** (constants.R_air/constants.cp_air)) / np.exp((1000 * q_star) * (1 + .81*q_star) * (3.376/T - 0.00254)) - T_env
 
 def eye_delta_T(theta_ES, p, T, T_env, q, q_star):
-    return (theta_ES * (p/1000) ** (R_air/cp_air)) / np.exp((1000 * q_star) * (1 + .81*q) * (3.376/T - 0.00254)) - T_env
+    return (theta_ES * (p/1000) ** (constants.R_air/constants.cp_air)) / np.exp((1000 * q_star) * (1 + .81*q) * (3.376/T - 0.00254)) - T_env
 
+def T_v(T, q):
+    return T * (1 + 0.61*q)
+
+def hydrostatic_pressure_change(P_s, Tv_s, p, delta_Tv):
+    return P_s/Tv_s * -np.trapz(delta_Tv, 1/p)
 
 if __name__ == "__main__":
     P_env_willis = 1007
     P_env_barbados = 1010
-
     RH = 80
     SST = 27 + 273.15
+    df = pd.read_csv('data/holland_willis_island_january.csv', header=0)
+
+    T = df['Temperature'].to_numpy() + 273.15
+    p = df['Pressure'].to_numpy()
+
     q = mix_ratio(P_env_willis, SST, RH)
     q_star = saturation_mix_ratio(P_env_willis, SST)
-    theta_ES_start = equiv_potential_temp(P_env_willis, SST, q)
+    theta_ES_start = equiv_potential_temp(p[-1], T[-1], q)
+    print(theta_ES_start)
 
-    deltaT = eyewall_delta_T(theta_ES_start, P_env_willis, SST, SST, q_star)a
-    print(deltaT)
-    
+    delta_Tv = eyewall_delta_T(theta_ES_start, p, T_v(T, q), T_v(T, q), q_star)
+    print(delta_Tv)
+
+    delta_Ps = hydrostatic_pressure_change(p[-1], T_v(T[-1], q), p, delta_Tv)
+    print(delta_Ps)
+
+    # plt.ylim(1020, 0)
+    # plt.scatter(df['Temperature'], df['Pressure'])    
+    # plt.show()
