@@ -17,7 +17,7 @@ def mix_ratio(p, T, RH):
 
 def potential_temp(p, T, q):
     # Potential temperature of moist air neglecting cp variation (Bolton 1980)
-    return (T - 273.15) * (constants.P0/p) ** ((constants.R_air / constants.cp_air) * (1 - 0.28) * q)
+    return T * (constants.P0/p) ** ((constants.R_air / constants.cp_air) * (1 - 0.28) * q)
 
 def equiv_potential_temp(p, T, q):
     # Empirical formula for equivalent potential temperature (Bolton 1980)
@@ -36,28 +36,40 @@ def T_v(T, q):
     return T * (1 + 0.61*q)
 
 def hydrostatic_pressure_change(P_s, Tv_s, p, delta_Tv):
-    return P_s/Tv_s * -np.trapz(delta_Tv, 1/p)
+    return P_s/Tv_s * np.trapz(delta_Tv, 1/p)
 
 if __name__ == "__main__":
-    P_env_willis = 1007
-    P_env_barbados = 1010
-    RH = 80
+    P_env = 1007
     SST = 27 + 273.15
+    RH = 80
     df = pd.read_csv('data/holland_willis_island_january.csv', header=0)
 
-    T = df['Temperature'].to_numpy() + 273.15
-    p = df['Pressure'].to_numpy()
+    T_env = np.flip(df['Temperature'].to_numpy() + 273.15)
+    T = np.copy(T_env)
+    p = np.flip(df['Pressure'].to_numpy())
+    P_s = p[0]
+    T_s = T[0]
 
-    q = mix_ratio(P_env_willis, SST, RH)
-    q_star = saturation_mix_ratio(P_env_willis, SST)
-    theta_ES_start = equiv_potential_temp(p[-1], T[-1], q)
+    q = mix_ratio(P_env, T_s, RH)
+    q_star = saturation_mix_ratio(P_env, T_s)
+    theta_ES_start = equiv_potential_temp(P_env, T_s, q)
     print(theta_ES_start)
 
-    delta_Tv = eyewall_delta_T(theta_ES_start, p, T_v(T, q), T_v(T, q), q_star)
+    delta_Tv = eyewall_delta_T(theta_ES_start, p, T, T_env, q_star)
     print(delta_Tv)
 
-    delta_Ps = hydrostatic_pressure_change(p[-1], T_v(T[-1], q), p, delta_Tv)
+    delta_Ps = hydrostatic_pressure_change(P_s, T_v(T_s, q), p, delta_Tv)
     print(delta_Ps)
+
+    P_s += delta_Ps
+    while abs(delta_Ps) > 1:
+        theta_ES = equiv_potential_temp(P_s, T_env, q)
+        delta_Tv = eye_delta_T(theta_ES, p, T, T_env, q, q_star)
+        delta_Ps = hydrostatic_pressure_change(P_s, T_v(T_s, q), p, delta_Tv)
+
+        P_s += delta_Ps 
+
+    print(P_s)
 
     # plt.ylim(1020, 0)
     # plt.scatter(df['Temperature'], df['Pressure'])    
