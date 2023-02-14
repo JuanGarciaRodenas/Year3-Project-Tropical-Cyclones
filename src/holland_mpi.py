@@ -38,6 +38,47 @@ def T_v(T, q):
 def hydrostatic_pressure_change(P_s, Tv_s, p, delta_Tv):
     return P_s/Tv_s * np.trapz(delta_Tv, 1/p)
 
+def eye_RH(P, P_s_E):
+    RH = np.zeros(len(P))
+
+    for i, p in enumerate(P):
+        if p <= 200:
+            RH[i] = 0
+            continue
+        
+        C = -10
+        X = C + ((P_s_E - 800) * (p - 200))/1000
+
+        if p > 200 and p <= 450:
+            RH[i] = max(X, 0)
+            continue
+
+        if p > 450 and p <= 700:
+            RH[i] = min(X, 80)
+            continue
+
+        if p > 700:
+            RH[i] = 0.075*p + 27.5
+
+    return RH
+
+def update_Ps(P_s, T_s, RH, p, T, T_env):
+    q_s = mix_ratio(P_s, T_s, RH)
+    q_star_s = saturation_mix_ratio(P_s, T_s)
+    theta_ES = equiv_potential_temp(P_s, T_s, q_s)
+
+    q = mix_ratio(p, T, RH)
+    q_star = saturation_mix_ratio(p, T)
+
+    delta_T = eyewall_delta_T(theta_ES, p, T, T_env, q_star)
+    print(delta_T)
+    delta_Tv = T_v(delta_T, q)
+    delta_Ps = hydrostatic_pressure_change(P_s, T_v(T_s, q_s), p, delta_Tv)
+    P_s += delta_Ps
+
+    return P_s
+
+
 if __name__ == "__main__":
     P_env = 1007
     SST = 27 + 273.15
@@ -45,32 +86,27 @@ if __name__ == "__main__":
     df = pd.read_csv('data/holland_willis_island_january.csv', header=0)
 
     T_env = np.flip(df['Temperature'].to_numpy() + 273.15)
-    T = np.copy(T_env)
     p = np.flip(df['Pressure'].to_numpy())
-    P_s = p[0]
-    T_s = T[0]
+    T = np.copy(T_env)
+    P_s = P_env
+    T_s = SST
 
-    q = mix_ratio(P_env, T_s, RH)
-    q_star = saturation_mix_ratio(P_env, T_s)
-    theta_ES_start = equiv_potential_temp(P_env, T_s, q)
+    q_s = mix_ratio(P_env, T_s, RH)
+    q_star_s = saturation_mix_ratio(P_env, T_s)
+    theta_ES_start = equiv_potential_temp(P_env, T_s, q_s)
     print(theta_ES_start)
-
-    delta_Tv = eyewall_delta_T(theta_ES_start, p, T, T_env, q_star)
-    print(delta_Tv)
-
-    delta_Ps = hydrostatic_pressure_change(P_s, T_v(T_s, q), p, delta_Tv)
-    print(delta_Ps)
-
-    P_s += delta_Ps
-    while abs(delta_Ps) > 1:
-        theta_ES = equiv_potential_temp(P_s, T_env, q)
-        delta_Tv = eye_delta_T(theta_ES, p, T, T_env, q, q_star)
-        delta_Ps = hydrostatic_pressure_change(P_s, T_v(T_s, q), p, delta_Tv)
-
-        P_s += delta_Ps 
-
-    print(P_s)
 
     # plt.ylim(1020, 0)
     # plt.scatter(df['Temperature'], df['Pressure'])    
     # plt.show()
+
+    P_s_change = 1.1
+    while abs(P_s_change) > 1:
+        P_s_new = update_Ps(P_s, T_s, RH, p, T, T_env)
+        P_s_change = P_s_new - P_s
+        P_s = P_s_new
+        print(f"Surface pressure: {P_s}, Pressure Change {P_s_change}")
+
+    eye_RH = eye_RH(p, P_s)
+    print(eye_RH)
+
